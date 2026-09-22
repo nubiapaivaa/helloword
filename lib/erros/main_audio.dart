@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'audio_feedback.dart';
+import '../audio_feedback.dart';
 
 void main() {
   runApp(const TreinoApp());

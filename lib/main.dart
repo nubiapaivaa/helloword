@@ -1,111 +1,235 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
+
+import 'tarefa.dart';
+import 'database_helper.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const MeuAplicativo());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MeuAplicativo extends StatelessWidget {
+  const MeuAplicativo({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Meu Mapa',
-      home: const MapaPage(),
+      title: 'Tarefas',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
+      home: const TarefasPage(),
     );
   }
 }
 
-class MapaPage extends StatefulWidget {
-  const MapaPage({super.key});
+class TarefasPage extends StatefulWidget {
+  const TarefasPage({super.key});
 
   @override
-  State<MapaPage> createState() => _MapaPageState();
+  State<TarefasPage> createState() => _TarefasPageState();
 }
 
-class _MapaPageState extends State<MapaPage> {
-  Position? posicao;
+class _TarefasPageState extends State<TarefasPage> {
+  final DatabaseHelper dbHelper = DatabaseHelper();
 
-  final MapController mapaController = MapController();
+  final TextEditingController descricaoController = TextEditingController();
 
-  Future<void> buscarLocalizacao() async {
-    bool servicoAtivo = await Geolocator.isLocationServiceEnabled();
+  String prioridadeSelecionada = 'Média';
 
-    if (!servicoAtivo) {
-      await Geolocator.openLocationSettings();
-      return;
-    }
+  List<Tarefa> tarefas = [];
 
-    LocationPermission permissao = await Geolocator.checkPermission();
-
-    if (permissao == LocationPermission.denied) {
-      permissao = await Geolocator.requestPermission();
-    }
-    if (permissao == LocationPermission.deniedForever ||
-        permissao == LocationPermission.denied) {
-      return;
-    }
-    Position novaPosicao = await Geolocator.getCurrentPosition();
-    setState(() {
-      posicao = novaPosicao;
-    });
-
-    mapaController.move(
-      LatLng(
-        novaPosicao.latitude,
-        novaPosicao.longitude),
-        16);
-  }
   @override
   void initState() {
     super.initState();
-    buscarLocalizacao();
+
+    carregarTarefas();
+  }
+
+  // READ
+  Future<void> carregarTarefas() async {
+    final resultado = await dbHelper.listarTarefas();
+
+    setState(() {
+      tarefas = resultado;
+    });
+  }
+
+  // CREATE
+  Future<void> adicionarTarefa() async {
+    final descricao = descricaoController.text.trim();
+
+    if (descricao.isEmpty) {
+      return;
+    }
+
+    final tarefa = Tarefa(
+      descricao: descricao,
+      prioridade: prioridadeSelecionada,
+      status: 'Pendente',
+    );
+
+    await dbHelper.inserirTarefa(tarefa);
+
+    descricaoController.clear();
+
+    setState(() {
+      prioridadeSelecionada = 'Média';
+    });
+
+    await carregarTarefas();
+  }
+
+  // UPDATE
+  Future<void> concluirTarefa(Tarefa tarefa) async {
+    final tarefaAtualizada = Tarefa(
+      id: tarefa.id,
+      descricao: tarefa.descricao,
+      prioridade: tarefa.prioridade,
+      status: 'Concluída',
+    );
+
+    await dbHelper.atualizarTarefa(tarefaAtualizada);
+
+    await carregarTarefas();
+  }
+
+  // DELETE
+  Future<void> excluirTarefa(int id) async {
+    await dbHelper.ExcluirTarefa(id);
+
+    await carregarTarefas();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Meu Mapa')),
-        body: FlutterMap(
-          mapController: mapaController,
-          options: const MapOptions(
-            initialCenter: LatLng(-21.470000, -47030000),
-            initialZoom: 13,
-          ),
-          children: [
-            TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.exemplem.mapa_flutter',
-            ),
+      appBar: AppBar(title: const Text('Minhas Tarefas')),
 
-            if (posicao != null)
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: LatLng(
-                      posicao!.latitude,
-                      posicao!.longitude),
-                      height: 50,
-                      width: 50,
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.red,
-                        size: 50,
-                      ),
+      body: Column(
+        children: [
+          // FORMULÁRIO
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                TextField(
+                  controller: descricaoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Descrição da tarefa',
+                    border: OutlineInputBorder(),
                   ),
-                ],
-              ),
-          ],
-        ),
+                ),
 
-        floatingActionButton: FloatingActionButton(
-          onPressed: buscarLocalizacao,
-          child: const Icon(Icons.my_location),
-        ),
-      );
+                const SizedBox(height: 12),
+
+                DropdownButtonFormField<String>(
+                  value: prioridadeSelecionada,
+                  decoration: const InputDecoration(
+                    labelText: 'Prioridade',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'Baixa', child: Text('Baixa')),
+                    DropdownMenuItem(value: 'Média', child: Text('Média')),
+                    DropdownMenuItem(value: 'Alta', child: Text('Alta')),
+                  ],
+                  onChanged: (valor) {
+                    if (valor != null) {
+                      setState(() {
+                        prioridadeSelecionada = valor;
+                      });
+                    }
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: adicionarTarefa,
+                    child: const Text('ADICIONAR TAREFA'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(),
+
+          // LISTAGEM
+          Expanded(
+            child: tarefas.isEmpty
+                ? const Center(child: Text('Nenhuma tarefa cadastrada.'))
+                : ListView.builder(
+                    itemCount: tarefas.length,
+                    itemBuilder: (context, index) {
+                      final tarefa = tarefas[index];
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+
+                        child: ListTile(
+                          leading: CircleAvatar(child: Text('${tarefa.id}')),
+
+                          title: Text(
+                            tarefa.descricao,
+                            style: TextStyle(
+                              decoration: tarefa.status == 'Concluída'
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                          ),
+
+                          subtitle: Text(
+                            'Prioridade: ${tarefa.prioridade}\n'
+                            'Status: ${tarefa.status}',
+                          ),
+
+                          isThreeLine: true,
+
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Concluir
+                              if (tarefa.status != 'Concluída')
+                                IconButton(
+                                  icon: const Icon(Icons.check),
+                                  tooltip: 'Concluir',
+                                  onPressed: () {
+                                    concluirTarefa(tarefa);
+                                  },
+                                ),
+
+                              // Excluir
+                              IconButton(
+                                icon: const Icon(Icons.delete),
+                                tooltip: 'Excluir',
+                                onPressed: () {
+                                  excluirTarefa(tarefa.id!);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    descricaoController.dispose();
+
+    super.dispose();
   }
 }
